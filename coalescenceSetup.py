@@ -6,17 +6,22 @@ import sys
 import xml.etree.ElementTree as et
 import ppls1.imp.chp as imp
 import ppls1.exp.chp as exp
+import numpy as np
 
 
 #domain setup
 r1 = 12 #radius of droplet 1
 r2 = r1 #radius of droplet 2
 
-d = 2 #distance between droplet surfaces
+d = 4 #distance between droplet surfaces
 
 domainX = max(r1, r2) * 4
 domainZ = domainX
 domainY = 3*r1 + d + 3*r2
+#derived positional values:
+touchPlaneY = 3*r1+d/2
+center1Y = 2*r1
+center2Y = 3*r1 + d + r2
 
 # physics setup
 temperature = .7 
@@ -26,7 +31,7 @@ temperature = .7
 # simulation setup
 execStep = None
 
-ls1_exec = '/home/niemann/ls1-mardyn_master/build/src/MarDyn'
+ls1_exec = '/home/niemann/ls1-mardyn_cylindricSampling/build/src/MarDyn'
 work_folder = f"T{temperature}_d{d}_r1{r1}_r2{r2}" #_{str(datetime.now()).replace(' ', '')}
 stepName_init = "init"
 stepName_prod = "prod"
@@ -36,17 +41,17 @@ configName_prod = "config_prod.xml"
 def main():
     if(execStep == 'init'):
         step1_init()  ## bulk liquid initialization & equi
-    elif execStep == 'equi':
-        step2_equi()  ## cutout of two droplets, coalescense process.
+    elif execStep == 'prod':
+        step2_prod()  ## cutout of two droplets, coalescense process.
     else:
         print(f'execStep argument "{execStep}" invalid. please specify correctly.')
 
 def step1_init():
     rhol,rhov = vle_kedia2006(temperature)
 
-    # make sure sphereparams.xml exists
-    if not os.path.exists(os.path.normpath("./sphereparams.xml")):
-        writeFile(template_sphereparams(), os.path.normpath("./sphereparams.xml"))    
+    # # make sure sphereparams.xml exists
+    # if not os.path.exists(os.path.normpath("./sphereparams.xml")):
+    #     writeFile(template_sphereparams(), os.path.normpath("./sphereparams.xml"))    
 
     # create work_folder
     if not os.path.exists(work_folder):
@@ -63,20 +68,20 @@ def step1_init():
 
     os.system(f'cd {work_folder}; sbatch stirling_init.sh')
     os.system('cd ..')
-    
+
     return 0
 
-def step2_equi():
+def step2_prod():
     rhol,rhov = vle_kedia2006(temperature)
     
     
     in_file_path = os.path.join(work_folder, 'cp_binary_bulk-2.restart.dat')
-    file_path_equi_start = os.path.join(work_folder, 'cp_binary_equi.start.dat')
+    file_path_prod_start = os.path.join(work_folder, 'cp_binary_prod.start.dat')
 
 
     ############# adjust local densities
     in_file_path_header = in_file_path[:-4]+'.header.xml'
-    file_path_equi_start_header = file_path_equi_start[:-4]+'.header.xml'
+    file_path_prod_start_header = file_path_prod_start[:-4]+'.header.xml'
     
     # Read in checkpoint header
     headerXMLTree = et.parse(in_file_path_header)
@@ -95,7 +100,7 @@ def step2_equi():
     if rhoBulk < rhol:
         print(f"WARNING! Bulk density too low, desired density of rhol={rhol} will not be achieved!")
 
-    # Cutout droplet/bubble
+    # Cutout droplets: 
     chpFilm = []
 
     for par in chp:
@@ -103,16 +108,25 @@ def step2_equi():
         ry = par['ry']
         rz = par['rz']
         
-        distanceFromSymmetryPlane = abs(ry - 0.5*yBox)
-
-
-        if distanceFromSymmetryPlane <= filmY/2:  
-            if random.random() <= (rhol/rhoBulk):  # Only keep some particles based on density
+        #divide into two subdomains, according to droplet:
+        dx = rx - domainX/2
+        dz = rz - domainZ/2
+        if ry<touchPlaneY: 
+            #subdomain1
+            dy = ry - center1Y
+            dCenter = np.sqrt(dx**2 + dy**2 + dz**2)
+            # Only keep some particles based on density profile
+            if random.random() <= densityProfileSharp(dCenter, r1) / rhoBulk: 
                 chpFilm.append(par)
-        else:                          # vapor (outside drop / inside bubble)
-            if random.random() <= (rhov/rhoBulk):  # Only keep some particles based on density
+        else:
+            #subdomain2
+            dy = ry - center2Y
+            dCenter = np.sqrt(dx**2 + dy**2 + dz**2)
+            # Only keep some particles based on density profile
+            if random.random() <= densityProfileSharp(dCenter, r2) / rhoBulk: 
                 chpFilm.append(par)
-    
+            
+
     num_new = len(chpFilm)
     
     # refresh particle ids
@@ -125,26 +139,26 @@ def step2_equi():
     headerXML.find('headerinfo/number').text = str(num_new)
     headerXML.find('headerinfo/time').text = str(0.0)
     
-    headerXMLTree.write(file_path_equi_start_header)
-    exp.exp_chp_bin_LD(file_path_equi_start, chpFilm)
+    headerXMLTree.write(file_path_prod_start_header)
+    exp.exp_chp_bin_LD(file_path_prod_start, chpFilm)
     
     ############# /adjust local densities
 
 
 
     # create conifg.xml
-    equiConfigText = template_equi(xBox, yBox, zBox, temperature)
-    writeFile(equiConfigText, os.path.join(work_folder, configName_equi))
+    prodConfigText = template_prod(xBox, yBox, zBox, temperature)
+    writeFile(prodConfigText, os.path.join(work_folder, configName_prod))
 
     # create bash (only stirling so far)
-    bashText = template_bash(ls1_exec, configName_equi, stepName_equi)
-    writeFile(bashText, os.path.join(work_folder, 'stirling_equi.sh'))
-    os.system(f'chmod +x {os.path.join(work_folder, "stirling_equi.sh")}')
+    bashText = template_bash(ls1_exec, configName_prod, stepName_prod)
+    writeFile(bashText, os.path.join(work_folder, 'stirling_prod.sh'))
+    os.system(f'chmod +x {os.path.join(work_folder, "stirling_prod.sh")}')
 
 
 
 
-    os.system(f'cd {work_folder}; sbatch stirling_equi.sh')
+    os.system(f'cd {work_folder}; sbatch stirling_prod.sh')
 
 
 
@@ -180,6 +194,15 @@ def vle_kedia2006(T):
 
 
 
+def densityProfileSharp(dCenter, r):
+    rhol,rhov = vle_kedia2006(temperature)
+    # dCenter := distance from center of droplet 1
+    # naive density profile.
+    if dCenter <= r1:
+        return rhol
+    else:
+        return rhov
+    
 
 
 
@@ -195,7 +218,7 @@ def writeFile(content, outfilepath):
 def template_bash(ls1Exec, configName, stepName, nodes = 1, nTasks = 1, ntasksPerNode = 1, cpusPerTask = 1):
     return f"""#!/bin/sh
 
-#SBATCH -J ReplaceJobName
+#SBATCH -J coa_d{d}_T{temperature}
 #SBATCH --nodes={nodes}
 
 ### 1*8 MPI ranks
@@ -216,21 +239,21 @@ def template_bash(ls1Exec, configName, stepName, nodes = 1, nTasks = 1, ntasksPe
 
 
 
-def template_sphereparams():
-    return f"""<?xml version='1.0' encoding='UTF-8'?>
-<spheres>
-    <!-- 1CLJTS -->
-    <site id="1">
-        <radius>0.5</radius>
-        <color>
-            <r>0</r>
-            <g>0</g>
-            <b>155</b>
-            <alpha>255</alpha>
-        </color>
-    </site>
-</spheres>
-    """        
+# def template_sphereparams():
+#     return f"""<?xml version='1.0' encoding='UTF-8'?>
+# <spheres>
+#     <!-- 1CLJTS -->
+#     <site id="1">
+#         <radius>0.5</radius>
+#         <color>
+#             <r>0</r>
+#             <g>0</g>
+#             <b>155</b>
+#             <alpha>255</alpha>
+#         </color>
+#     </site>
+# </spheres>
+#     """        
 	
 
 	
@@ -385,10 +408,12 @@ def template_init(boxx, boxy, boxz, temperature, rhol):
 """
 
 
-def template_equi(boxx, boxy, boxz, temperature):
+def template_prod(boxx, boxy, boxz, temperature):
     simsteps = int(10e3)
-    writefreq = int(1e3)
-    rsfreq = int(writefreq)
+    writefreq = int(5e3)
+    mmpldFreq = int(500)
+    rsfreq = int(mmpldFreq)
+    cylSamplingFreq = int(500)
     return f"""<?xml version='1.0' encoding='UTF-8'?>
 <mardyn version="20100525" >
 
@@ -438,8 +463,8 @@ def template_equi(boxx, boxy, boxz, temperature):
     
         <phasespacepoint>
 			<file type="binary">
-				<header>./cp_binary_equi.start.header.xml</header>
-				<data>./cp_binary_equi.start.dat</data>
+				<header>./cp_binary_prod.start.header.xml</header>
+				<data>./cp_binary_prod.start.dat</data>
 			</file>
 			<ignoreCheckpointTime>true</ignoreCheckpointTime>
         </phasespacepoint>
@@ -499,8 +524,34 @@ def template_equi(boxx, boxy, boxz, temperature):
         <outputplugin name="CheckpointWriter">
             <type>binary</type>
             <writefrequency>{writefreq}</writefrequency>
-            <outputprefix>cp_binary_equi</outputprefix>
+            <outputprefix>cp_binary_prod</outputprefix>
         </outputplugin>
+        <outputplugin name="MmpldWriter" type="multi">
+            <spheres>
+                <!-- 1CLJTS -->
+                <site id="1">
+                    <radius>0.5</radius>
+                    <color>
+                        <r>0</r>
+                        <g>0</g>
+                        <b>155</b>
+                        <alpha>255</alpha>
+                    </color>
+                </site>
+            </spheres>
+			<writecontrol>
+				<start>0</start>
+				<writefrequency>{mmpldFreq}</writefrequency>
+				<stop>500000000</stop>
+				<framesperfile>0</framesperfile>
+			</writecontrol>
+			<outputprefix>megamol</outputprefix>
+		</outputplugin>
+		<outputplugin name="Adios2Writer">
+			<outputfile>adios_checkpoint.bp</outputfile>
+			<adios2enginetype>BP4</adios2enginetype>
+			<writefrequency>{mmpldFreq}</writefrequency>
+		</outputplugin>
     </output>
     
     <plugin name="DriftCtrl">
@@ -525,12 +576,20 @@ def template_equi(boxx, boxy, boxz, temperature):
         </range>
     </plugin>
 
-    
+    <plugin name="CylindricSampling">
+            <binwidth>1</binwidth>                  <!-- Width of sampling bins; default 1.0 -->
+            <start>0</start>                          <!-- Simstep to start sampling; default 0 -->
+            <writefrequency>{cylSamplingFreq}</writefrequency>        <!-- Simstep to write out result file; default 10000 -->
+            <stop>1000000000000</stop>                            <!-- Simstep to stop sampling; default 1000000000 -->
+    </plugin>
+
+
+
 	<plugin name="RegionSampling">
 		<region>
 			<coords>
-				<lcx>0</lcx> <lcy refcoordsID="0">0.0</lcy> <lcz>0</lcz>
-				<ucx>box</ucx> <ucy refcoordsID="0">box</ucy> <ucz>box</ucz>
+				<lcx>{domainX/2 - 1}</lcx> <lcy refcoordsID="0">0.0</lcy> <lcz>{domainZ/2 - 1}</lcz>
+				<ucx>{domainX/2 + 1}</ucx> <ucy refcoordsID="0">box</ucy> <ucz>{domainZ/2 + 1}</ucz>
 			</coords>
 			
 			<sampling type="profiles">   <!-- Sampling profiles of various scalar and vector quantities, e.g. temperature, density, force, hydrodynamic velocity -->	
@@ -576,8 +635,8 @@ if __name__ == '__main__':
     for arg in sys.argv[1:]:    #argument #0 is always [scriptname].py
         if arg == 'init':
             execStep = 'init'
-        elif arg == 'equi':
-            execStep = 'equi'
+        elif arg == 'prod':
+            execStep = 'prod'
     #     elif arg == 'prod':
     #         execStep = 'prod'
     #     elif arg == 'test':
