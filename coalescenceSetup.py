@@ -7,21 +7,22 @@ import xml.etree.ElementTree as et
 import ppls1.imp.chp as imp
 import ppls1.exp.chp as exp
 import numpy as np
+import pandas as pd
 
+
+#TODO: check domain decomposition --> 2x2x2 sollte auch für production (coalesence) optimal sein, wenn y-symmetrisch
 
 #domain setup
-r1 = 12 #radius of droplet 1
-r2 = r1 #radius of droplet 2
+r1 = 6 #radius of droplet 1
 
 d = 4 #distance between droplet surfaces
-
-domainX = max(r1, r2) * 4
-domainZ = domainX
-domainY = 3*r1 + d + 3*r2
-#derived positional values:
-touchPlaneY = 3*r1+d/2
-center1Y = 2*r1
-center2Y = 3*r1 + d + r2
+surfToBoundary = 3*r1 #distance between surface and domain boundary
+domainX = 2*r1 + 2*surfToBoundary
+# domainZ = domainX
+# domainY = (2*r1 + surfToBoundary)*2 + d
+# #derived positional values:
+# center1Y = surfToBoundary + r1
+# center2Y = domainY - surfToBoundary - r1
 
 # physics setup
 temperature = .7 
@@ -32,17 +33,22 @@ temperature = .7
 execStep = None
 
 ls1_exec = '/home/niemann/ls1-mardyn_cylindricSampling/build/src/MarDyn'
-work_folder = f"T{temperature}_d{d}_r1{r1}_r2{r2}" #_{str(datetime.now()).replace(' ', '')}
-stepName_init = "init"
+work_folder = f"T{temperature}_d{d}_r{r1}" #_{str(datetime.now()).replace(' ', '')}
+stepName_init = "init" #TODO: rename steps: bulk -- drop -- prod/coal
+stepName_equi = "equi"
 stepName_prod = "prod"
 configName_init = "config_init.xml"
+configName_equi = "config_equi.xml"
 configName_prod = "config_prod.xml"
 
 def main():
-    if(execStep == 'init'):
+    if(execStep == 'bulk'):
         step1_init()  ## bulk liquid initialization & equi
+        #TODO: bulk duplication for faster bulk equi
+    elif execStep == 'drop':
+        step2_equi()  ## cutout & equi of single droplet
     elif execStep == 'prod':
-        step2_prod()  ## cutout of two droplets, coalescense process.
+        step3_prod()  ## setup of coalescence and start production
     else:
         print(f'execStep argument "{execStep}" invalid. please specify correctly.')
 
@@ -55,33 +61,37 @@ def step1_init():
 
     # create work_folder
     if not os.path.exists(work_folder):
-        os.mkdir(work_folder)    
+        os.mkdir(work_folder)
     # create conifg.xml
-    bulkConfigText = template_init(domainX, domainY, domainZ, temperature, rhol)
+
+    bulkBox = domainX
+    
+    bulkConfigText = template_init(bulkBox, bulkBox, bulkBox, temperature, rhol)
     writeFile(bulkConfigText, os.path.join(work_folder, configName_init))
 
     # create bash (only stirling so far)
+    bashName_bulkInit = 'stirling_bulk.sh'
     bashText = template_bash(ls1_exec, configName_init, stepName_init)
-    writeFile(bashText, os.path.join(work_folder, 'stirling_init.sh'))
-    os.system(f'chmod +x {os.path.join(work_folder, "stirling_init.sh")}')
+    writeFile(bashText, os.path.join(work_folder, bashName_bulkInit))
+    os.system(f'chmod +x {os.path.join(work_folder, bashName_bulkInit)}')
 
 
-    os.system(f'cd {work_folder}; sbatch stirling_init.sh')
+    os.system(f'cd {work_folder}; sbatch {bashName_bulkInit}')
     os.system('cd ..')
 
     return 0
 
-def step2_prod():
+def step2_equi():
+
     rhol,rhov = vle_kedia2006(temperature)
     
-    
     in_file_path = os.path.join(work_folder, 'cp_binary_bulk-2.restart.dat')
-    file_path_prod_start = os.path.join(work_folder, 'cp_binary_prod.start.dat')
+    file_path_equi_start = os.path.join(work_folder, 'cp_binary_equi.start.dat')
 
 
     ############# adjust local densities
     in_file_path_header = in_file_path[:-4]+'.header.xml'
-    file_path_prod_start_header = file_path_prod_start[:-4]+'.header.xml'
+    file_path_equi_start_header = file_path_equi_start[:-4]+'.header.xml'
     
     # Read in checkpoint header
     headerXMLTree = et.parse(in_file_path_header)
@@ -101,37 +111,27 @@ def step2_prod():
         print(f"WARNING! Bulk density too low, desired density of rhol={rhol} will not be achieved!")
 
     # Cutout droplets: 
-    chpFilm = []
+    chpDroplet = []
 
-    for par in chp:
+
+    for par in chp:    # TODO: write faster method (using pd.sample)
         rx = par['rx'] 
         ry = par['ry']
         rz = par['rz']
         
-        #divide into two subdomains, according to droplet:
         dx = rx - domainX/2
-        dz = rz - domainZ/2
-        if ry<touchPlaneY: 
-            #subdomain1
-            dy = ry - center1Y
-            dCenter = np.sqrt(dx**2 + dy**2 + dz**2)
-            # Only keep some particles based on density profile
-            if random.random() <= densityProfileSharp(dCenter, r1) / rhoBulk: 
-                chpFilm.append(par)
-        else:
-            #subdomain2
-            dy = ry - center2Y
-            dCenter = np.sqrt(dx**2 + dy**2 + dz**2)
-            # Only keep some particles based on density profile
-            if random.random() <= densityProfileSharp(dCenter, r2) / rhoBulk: 
-                chpFilm.append(par)
+        dy = ry - domainX/2
+        dz = rz - domainX/2
+        dFromCenter = np.sqrt(dx**2 + dy**2 + dz**2)
+        # Only keep some particles based on density profile
+        if random.random() <= densityProfileSharp(dFromCenter, r1) / rhoBulk: 
+            chpDroplet.append(par)
             
-
-    num_new = len(chpFilm)
+    num_new = len(chpDroplet)
     
     # refresh particle ids
     for pi in range(num_new):
-        chpFilm[pi]['pid']=pi+1
+        chpDroplet[pi]['pid']=pi+1
     
     headerXML.find('headerinfo/length/x').text = str(xBox)
     headerXML.find('headerinfo/length/y').text = str(yBox)
@@ -139,10 +139,114 @@ def step2_prod():
     headerXML.find('headerinfo/number').text = str(num_new)
     headerXML.find('headerinfo/time').text = str(0.0)
     
-    headerXMLTree.write(file_path_prod_start_header)
-    exp.exp_chp_bin_LD(file_path_prod_start, chpFilm)
+    headerXMLTree.write(file_path_equi_start_header)
+    exp.exp_chp_bin_LD(file_path_equi_start, chpDroplet)
     
-    ############# /adjust local densities
+
+
+
+    ############# start sim:
+    # create conifg.xml
+    equiConfigText = template_equi(xBox, yBox, zBox, temperature)
+    writeFile(equiConfigText, os.path.join(work_folder, configName_equi))
+
+    # create bash (only stirling so far):
+    bashName_dropEqui = 'stirling_drop.sh'
+    bashText = template_bash(ls1_exec, configName_equi, stepName_equi)
+
+    writeFile(bashText, os.path.join(work_folder, bashName_dropEqui))
+    os.system(f'chmod +x {os.path.join(work_folder, bashName_dropEqui)}')
+    
+    #run:
+    os.system(f'cd {work_folder}; sbatch {bashName_dropEqui}')
+
+
+
+
+
+def step3_prod():
+
+
+    in_file_path = os.path.join(work_folder, 'cp_binary_drop-2.restart.dat')
+    file_path_prod_start = os.path.join(work_folder, 'cp_binary_prod.start.dat')
+
+
+    ############# adjust local densities
+    in_file_path_header = in_file_path[:-4]+'.header.xml'
+    file_path_prod_start_header = file_path_prod_start[:-4]+'.header.xml'
+    
+    # Read in checkpoint header
+    headerXMLTree = et.parse(in_file_path_header)
+    headerXML = headerXMLTree.getroot()
+    
+    
+    # Get box lengths from xml header file
+    xBoxDrop = float(headerXML.find('headerinfo/length/x').text)
+    yBoxDrop = float(headerXML.find('headerinfo/length/y').text)
+    zBoxDrop = float(headerXML.find('headerinfo/length/z').text)
+    if yBoxDrop != xBoxDrop:
+        print(f"WARNING: step3: yboxDrop != xBoxDrop.")
+    if zBoxDrop != xBoxDrop:
+        print(f"WARNING: step3: zboxDrop != xBoxDrop.")
+
+    vacuumslab = .5 # minimum distance of particles from stiching-plane 
+    if vacuumslab>=d/2:
+        print(f"ERROR! vacuumslab>=d. exiting.")
+        exit()
+    
+    centerDomainDrop = xBoxDrop/2
+    yBoxSubdomain = centerDomainDrop+r1+d/2
+    yBoxFull = yBoxSubdomain *2
+
+    # Read in checkpoint data to create two droplet domains
+    dfDrop1 = imp.imp_chp_bin_DF(in_file_path)  #pid  cid	rx	ry	rz	vx	vy	vz	q0	q1	q2	q3	Dx	Dy	Dz
+    print(dfDrop1)
+    dfDrop2 = dfDrop1.copy(deep=True)
+    print(1)
+    print(dfDrop2)
+
+    dfDrop1_reduced = dfDrop1[dfDrop1['ry'] <= (yBoxSubdomain - vacuumslab)]
+    print(2)
+    print(dfDrop1_reduced)
+    dfDrop2_reduced = dfDrop1[dfDrop2['ry'] >= (yBoxDrop-yBoxSubdomain+ vacuumslab)]
+    print(3)
+    print(dfDrop2_reduced)
+    dfDrop2_reduced['ry'] = dfDrop2_reduced['ry'] + (yBoxSubdomain - (yBoxDrop-yBoxSubdomain))
+    print(4)
+    print(dfDrop2_reduced)
+    
+    dfFull = pd.concat([dfDrop1_reduced, dfDrop2_reduced])
+    print(5)
+    print(dfFull)
+
+
+    ## for testing: plot once: 
+
+
+
+    num_new = len(dfFull)
+    
+    # refresh particle ids
+    for pi in range(num_new):
+        dfFull['pid'][pi]=pi+1
+    print(6)
+    print(dfFull)
+    print(dfFull.head())
+
+    headerXML.find('headerinfo/length/x').text = str(xBoxDrop)
+    headerXML.find('headerinfo/length/y').text = str(yBoxFull)
+    headerXML.find('headerinfo/length/z').text = str(zBoxDrop)
+    headerXML.find('headerinfo/number').text = str(num_new)
+    headerXML.find('headerinfo/time').text = str(0.0)
+    
+    headerXMLTree.write(file_path_prod_start_header)
+    exp.exp_chp_bin_DF(file_path_prod_start, dfFull)  ##TODO: this produces error. check out why.
+
+    
+
+
+
+
 
 
 
@@ -150,18 +254,15 @@ def step2_prod():
     prodConfigText = template_prod(xBox, yBox, zBox, temperature)
     writeFile(prodConfigText, os.path.join(work_folder, configName_prod))
 
-    # create bash (only stirling so far)
+    # create bash (only stirling so far):
+    bashName_prod = 'stirling_prod.sh'
     bashText = template_bash(ls1_exec, configName_prod, stepName_prod)
-    writeFile(bashText, os.path.join(work_folder, 'stirling_prod.sh'))
-    os.system(f'chmod +x {os.path.join(work_folder, "stirling_prod.sh")}')
 
+    writeFile(bashText, os.path.join(work_folder, bashName_prod))
+    os.system(f'chmod +x {os.path.join(work_folder, bashName_prod)}')
 
-
-
-    os.system(f'cd {work_folder}; sbatch stirling_prod.sh')
-
-
-
+    #run:
+    os.system(f'cd {work_folder}; sbatch {bashName_prod}')
 
 
 
@@ -361,7 +462,7 @@ def template_init(boxx, boxy, boxz, temperature, rhol):
                             <component>0</component>
                         </target>
                         <settings>
-                            <numslabs>12</numslabs>
+                            <numslabs>1</numslabs>
                             <exponent>0.4</exponent>
                             <directions>xyz</directions>
                         </settings>
@@ -406,6 +507,153 @@ def template_init(boxx, boxy, boxz, temperature, rhol):
 </simulation>
 </mardyn>
 """
+
+
+def template_equi(boxx, boxy, boxz, temperature):
+    simsteps = int(10e3)
+    writefreq = int(5e3)
+    # mmpldFreq = int(500)
+    # rsfreq = int(mmpldFreq)
+    # cylSamplingFreq = int(500)
+    return f"""<?xml version='1.0' encoding='UTF-8'?>
+<mardyn version="20100525" >
+
+<refunits type="SI">
+    <length unit="nm">0.1</length>
+    <mass unit="u">1</mass>
+    <energy unit="K">1</energy>
+</refunits>
+
+<simulation type="MD" >            
+    <integrator type="Leapfrog" >
+        <timestep unit="reduced" >0.004</timestep>
+    </integrator>
+
+    <run>
+        <currenttime>0</currenttime>
+        <production>
+            <steps>{simsteps}</steps>
+        </production>
+    </run>
+
+    <ensemble type="NVT">
+        <temperature unit="reduced" >{temperature}</temperature>
+        <domain type="box">
+            <lx>{boxx}</lx>
+            <ly>{boxy}</ly>
+            <lz>{boxz}</lz>
+        </domain>
+
+        <components>
+            <!-- 1CLJTS -->
+            <moleculetype id="1" name="1CLJTS">
+                <site type="LJ126" id="1" name="LJTS">
+                    <coords> <x>0.0</x> <y>0.0</y> <z>0.0</z> </coords>
+                    <mass>1.0</mass>
+                    <sigma>1.0</sigma>
+                    <epsilon>1.0</epsilon>
+                    <shifted>true</shifted>
+                </site>
+                <momentsofinertia rotaxes="xyz" >
+                    <Ixx>0.0</Ixx>
+                    <Iyy>0.0</Iyy>
+                    <Izz>0.0</Izz>
+                </momentsofinertia>
+            </moleculetype>
+        </components>
+    
+        <phasespacepoint>
+			<file type="binary">
+				<header>./cp_binary_equi.start.header.xml</header>
+				<data>./cp_binary_equi.start.dat</data>
+			</file>
+			<ignoreCheckpointTime>true</ignoreCheckpointTime>
+        </phasespacepoint>
+
+    </ensemble>
+
+    <algorithm>
+        <parallelisation type="DomainDecomposition">
+            <!--<MPIGridDims> <x>2</x> <y>2</y> <z>2</z> </MPIGridDims>-->
+        </parallelisation>
+        <datastructure type="LinkedCells">
+            <cellsInCutoffRadius>1</cellsInCutoffRadius>
+        </datastructure>
+        <cutoffs type="CenterOfMass" >
+            <defaultCutoff unit="reduced" >2.5</defaultCutoff>
+            <radiusLJ unit="reduced" >2.5</radiusLJ>
+        </cutoffs>
+        <electrostatic type="ReactionField" >
+            <epsilon>1.0e+10</epsilon>
+        </electrostatic>
+
+        <longrange type="none">
+        </longrange>
+
+
+        <thermostats>
+            <thermostat type="TemperatureControl">
+                <control>
+                    <start>0</start>
+                    <frequency>1</frequency>
+                    <stop>1000000000</stop>
+                </control>
+                <regions>
+                    <region>
+                        <coords>
+                            <lcx>0.0</lcx> <lcy>0.0</lcy> <lcz>0.0</lcz>
+                            <ucx>box</ucx> <ucy>box</ucy> <ucz>box</ucz>
+                        </coords>
+                        <target>
+                            <temperature>{temperature}</temperature>
+                            <component>0</component>
+                        </target>
+                        <settings>
+                            <numslabs>1</numslabs>
+                            <exponent>0.4</exponent>
+                            <directions>xyz</directions>
+                        </settings>
+                        <writefreq>10000</writefreq>
+                        <fileprefix>temp_log</fileprefix>
+                    </region>
+                </regions>
+            </thermostat>
+        </thermostats> 
+    </algorithm>
+
+    <output>
+        <outputplugin name="CheckpointWriter">
+            <type>binary</type>
+            <writefrequency>{writefreq}</writefrequency>
+            <outputprefix>cp_binary_drop</outputprefix>
+        </outputplugin>
+    </output>
+    
+    <plugin name="DriftCtrl">
+        <control>
+            <start>0</start>
+            <stop>20000000</stop>
+            <freq>
+                <sample>100</sample>
+                <control>100</control>
+                <write>100</write>
+            </freq>
+        </control>
+        <target>
+            <cid>1</cid>
+            <drift> <vx>0.0</vx> <vy>0.0</vy> <vz>0.0</vz> </drift>
+        </target>
+        <range>
+            <yl>0</yl> <yr>24</yr>
+            <subdivision>
+                <binwidth>24</binwidth>
+            </subdivision>
+        </range>
+    </plugin>
+</simulation>
+</mardyn>
+"""
+
 
 
 def template_prod(boxx, boxy, boxz, temperature):
@@ -508,7 +756,7 @@ def template_prod(boxx, boxy, boxz, temperature):
                             <component>0</component>
                         </target>
                         <settings>
-                            <numslabs>12</numslabs>
+                            <numslabs>1</numslabs>
                             <exponent>0.4</exponent>
                             <directions>xyz</directions>
                         </settings>
@@ -577,7 +825,7 @@ def template_prod(boxx, boxy, boxz, temperature):
     </plugin>
 
     <plugin name="CylindricSampling">
-            <binwidth>1</binwidth>                  <!-- Width of sampling bins; default 1.0 -->
+            <binwidth>2</binwidth>                  <!-- Width of sampling bins; default 1.0 -->
             <start>0</start>                          <!-- Simstep to start sampling; default 0 -->
             <writefrequency>{cylSamplingFreq}</writefrequency>        <!-- Simstep to write out result file; default 10000 -->
             <stop>1000000000000</stop>                            <!-- Simstep to stop sampling; default 1000000000 -->
@@ -633,9 +881,11 @@ if __name__ == '__main__':
 
     ### Reading Arguments
     for arg in sys.argv[1:]:    #argument #0 is always [scriptname].py
-        if arg == 'init':
-            execStep = 'init'
-        elif arg == 'prod':
+        if arg in ['init',  'bulk']:
+            execStep = 'bulk'
+        elif arg in ['equi', 'drop']:
+            execStep = 'drop'
+        elif arg in ['prod', 'coal']:
             execStep = 'prod'
     #     elif arg == 'prod':
     #         execStep = 'prod'
@@ -658,5 +908,5 @@ if __name__ == '__main__':
     #         print(f'argument {arg} interpreted as rList = {rList}')
     #     else:
     #         print(f'arg {arg} not a valid argument')
-    
+    print(f'execstep: {execStep}')
     main()
