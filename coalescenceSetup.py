@@ -13,7 +13,7 @@ import pandas as pd
 #domain setup
 r1 = 6 #radius of droplet 1
 
-d = 10 #distance between droplet surfaces
+d = 2 #distance between droplet surfaces
 surfToBoundary = 3*r1 #distance between surface and domain boundary
 domainX = 2*r1 + 2*surfToBoundary
 # domainZ = domainX
@@ -23,15 +23,16 @@ domainX = 2*r1 + 2*surfToBoundary
 # center2Y = domainY - surfToBoundary - r1
 
 # physics setup
-temperature = 0.9 
+temperature = 0.7 
 
 
 
 # simulation setup
 execStep = None
+runls1 = True 
 
 ls1_exec = '/home/niemann/ls1-mardyn_cylindricSampling/build/src/MarDyn'
-work_folder = f"T{temperature}_d{d}_r{r1}" #_{str(datetime.now()).replace(' ', '')}
+work_folder = 'testFolder' #default, full name generated after arguments are parsed
 stepName_init = "init" #TODO: rename steps: bulk -- drop -- prod/coal
 stepName_equi = "equi"
 stepName_prod = "prod"
@@ -40,6 +41,7 @@ configName_equi = "config_equi.xml"
 configName_prod = "config_prod.xml"
 
 def main():
+
     if(execStep == 'bulk'):
         step1_init()  ## bulk liquid initialization & equi
         #TODO: bulk duplication for faster bulk equi
@@ -49,6 +51,9 @@ def main():
         step3_prod()  ## setup of coalescence and start production
     else:
         print(f'execStep argument "{execStep}" invalid. please specify correctly.')
+
+
+
 
 def step1_init():
     rhol,rhov = vle_kedia2006(temperature)
@@ -74,7 +79,7 @@ def step1_init():
     os.system(f'chmod +x {os.path.join(work_folder, bashName_bulkInit)}')
 
 
-    os.system(f'cd {work_folder}; sbatch {bashName_bulkInit}')
+    if runls1: os.system(f'cd {work_folder}; sbatch {bashName_bulkInit}')
     os.system('cd ..')
 
     return 0
@@ -156,7 +161,7 @@ def step2_equi():
     os.system(f'chmod +x {os.path.join(work_folder, bashName_dropEqui)}')
     
     #run:
-    os.system(f'cd {work_folder}; sbatch {bashName_dropEqui}')
+    if runls1: os.system(f'cd {work_folder}; sbatch {bashName_dropEqui}')
 
 
 
@@ -199,24 +204,15 @@ def step3_prod():
     # Read in checkpoint data to create two droplet domains
     #df Head:    pid  cid	rx	ry	rz	vx	vy	vz	q0	q1	q2	q3	Dx	Dy	Dz
     dfDrop1 = imp.imp_chp_bin_DF(in_file_path) 
-    print(dfDrop1)
     dfDrop2 = dfDrop1.copy(deep=True)
-    print(1)
-    print(dfDrop2)
-
+    
     dfDrop1_reduced = dfDrop1[dfDrop1['ry'] <= (yBoxSubdomain - finClearence)]
-    print(2)
-    print(dfDrop1_reduced)
     dfDrop2_reduced = dfDrop1[dfDrop2['ry'] >= (yBoxDrop-yBoxSubdomain+ finClearence)]
-    print(3)
-    print(dfDrop2_reduced)
     dfDrop2_reduced['ry'] = dfDrop2_reduced['ry'] + (yBoxSubdomain - (yBoxDrop-yBoxSubdomain))
-    print(4)
-    print(dfDrop2_reduced)
     
     dfFull = pd.concat([dfDrop1_reduced, dfDrop2_reduced])
     print(5)
-    print(dfFull)
+    # print(dfFull)
 
     # refresh index and particle ids 
     num_new = len(dfFull)
@@ -226,11 +222,11 @@ def step3_prod():
 
     
 
-    ## TODO: for testing: plot once: 
-    import matplotlib.pyplot as plt
-    ax1 = dfFull.plot.scatter('rx', 'ry')
-    ax1.set_aspect('equal', 'box')
-    plt.savefig('fig1.png')
+    # ## TODO: for testing: plot once: 
+    # import matplotlib.pyplot as plt
+    # ax1 = dfFull.plot.scatter('rx', 'ry')
+    # ax1.set_aspect('equal', 'box')
+    # plt.savefig('fig1.png')
 
     print(6)
     dfFull = dfFull.set_index(idArr)
@@ -250,10 +246,6 @@ def step3_prod():
 
 
 
-
-
-
-
     # create conifg.xml
     prodConfigText = template_prod(xBoxDrop, yBoxFull, zBoxDrop, temperature)
     writeFile(prodConfigText, os.path.join(work_folder, configName_prod))
@@ -266,7 +258,7 @@ def step3_prod():
     os.system(f'chmod +x {os.path.join(work_folder, bashName_prod)}')
 
     #run:
-    os.system(f'cd {work_folder}; sbatch {bashName_prod}')
+    if runls1: os.system(f'cd {work_folder}; sbatch {bashName_prod}')
 
 
 
@@ -661,11 +653,11 @@ def template_equi(boxx, boxy, boxz, temperature):
 
 
 def template_prod(boxx, boxy, boxz, temperature):
-    simsteps = int(20e3)
+    simsteps = int(30e3)
     writefreq = int(5e3)
     mmpldFreq = int(500)
     rsfreq = int(mmpldFreq)
-    cylSamplingFreq = int(5000)
+    cylSamplingFreq = int(1000)
     return f"""<?xml version='1.0' encoding='UTF-8'?>
 <mardyn version="20100525" >
 
@@ -834,29 +826,6 @@ def template_prod(boxx, boxy, boxz, temperature):
             <writefrequency>{cylSamplingFreq}</writefrequency>        <!-- Simstep to write out result file; default 10000 -->
             <stop>1000000000000</stop>                            <!-- Simstep to stop sampling; default 1000000000 -->
     </plugin>
-
-
-
-	<plugin name="RegionSampling">
-		<region>
-			<coords>
-				<lcx>{domainX/2 - 1}</lcx> <lcy refcoordsID="0">0.0</lcy> <lcz>{domainX/2 - 1}</lcz>
-				<ucx>{domainX/2 + 1}</ucx> <ucy refcoordsID="0">box</ucy> <ucz>{domainX/2 + 1}</ucz>
-			</coords>
-			
-			<sampling type="profiles">   <!-- Sampling profiles of various scalar and vector quantities, e.g. temperature, density, force, hydrodynamic velocity -->	
-				<control>
-					<start>0</start>           <!-- start time step -->
-					<frequency>{rsfreq}</frequency>   <!-- frequency of writing profiles -->
-					<stop>1000000000</stop>             <!-- stop time step -->
-				</control>
-				<subdivision type="number">       <!-- type="number | width" => subdivision of region into bins -->
-					<width>10</width>         <!-- bin width -->
-					<number>48</number>         <!-- number of bins -->
-				</subdivision>
-			</sampling>
-		</region>
-	</plugin>
 </simulation>
 </mardyn>
 """
@@ -891,6 +860,8 @@ if __name__ == '__main__':
             execStep = 'drop'
         elif arg in ['prod', 'coal']:
             execStep = 'prod'
+        elif arg == 'noRun':
+            runls1 = False
         elif arg.startswith('T'):  
             if len(arg) < 3 or type(eval(arg[1:])) == type(1) or type(eval(arg[1:]))== type(.7): arg+=',' 
             temperature = list(eval(arg[1:]))[0]
@@ -901,8 +872,8 @@ if __name__ == '__main__':
             print(f'argument {arg} interpreted as d = {d}')
         elif arg.startswith('r'):
             if len(arg) < 3 or type(eval(arg[1:])) == type(1) or type(eval(arg[1:]))== type(.7): arg+=',' 
-            r= list(eval(arg[1:]))[0]
-            print(f'argument {arg} interpreted as r = {r}')
+            r1 = list(eval(arg[1:]))[0]
+            print(f'argument {arg} interpreted as r1 = {r1}')
     #     elif arg == 'test':
     #         work_folder = os.path.join(work_folder, f'test')  
     #     elif arg.startswith('m'):
@@ -914,5 +885,8 @@ if __name__ == '__main__':
     #             machine = 3
     #     else:
     #         print(f'arg {arg} not a valid argument')
-    print(f'execstep: {execStep}')
+
+    work_folder = f"T{temperature}_r{r1}_d{d}" #_{str(datetime.now()).replace(' ', '')}
+    print(f'execstep: {execStep}. workFolder: {work_folder}')
+
     main()
