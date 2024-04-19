@@ -10,12 +10,10 @@ import numpy as np
 import pandas as pd
 
 
-#TODO: check domain decomposition --> 2x2x2 sollte auch für production (coalesence) optimal sein, wenn y-symmetrisch
-
 #domain setup
 r1 = 6 #radius of droplet 1
 
-d = 4 #distance between droplet surfaces
+d = 10 #distance between droplet surfaces
 surfToBoundary = 3*r1 #distance between surface and domain boundary
 domainX = 2*r1 + 2*surfToBoundary
 # domainZ = domainX
@@ -25,7 +23,7 @@ domainX = 2*r1 + 2*surfToBoundary
 # center2Y = domainY - surfToBoundary - r1
 
 # physics setup
-temperature = .7 
+temperature = 0.9 
 
 
 
@@ -189,8 +187,8 @@ def step3_prod():
     if zBoxDrop != xBoxDrop:
         print(f"WARNING: step3: zboxDrop != xBoxDrop.")
 
-    vacuumslab = .5 # minimum distance of particles from stiching-plane 
-    if vacuumslab>=d/2:
+    finClearence = .5 # minimum distance of particles from stiching-plane 
+    if finClearence>=d/2:
         print(f"ERROR! vacuumslab>=d. exiting.")
         exit()
     
@@ -199,16 +197,17 @@ def step3_prod():
     yBoxFull = yBoxSubdomain *2
 
     # Read in checkpoint data to create two droplet domains
-    dfDrop1 = imp.imp_chp_bin_DF(in_file_path)  #pid  cid	rx	ry	rz	vx	vy	vz	q0	q1	q2	q3	Dx	Dy	Dz
+    #df Head:    pid  cid	rx	ry	rz	vx	vy	vz	q0	q1	q2	q3	Dx	Dy	Dz
+    dfDrop1 = imp.imp_chp_bin_DF(in_file_path) 
     print(dfDrop1)
     dfDrop2 = dfDrop1.copy(deep=True)
     print(1)
     print(dfDrop2)
 
-    dfDrop1_reduced = dfDrop1[dfDrop1['ry'] <= (yBoxSubdomain - vacuumslab)]
+    dfDrop1_reduced = dfDrop1[dfDrop1['ry'] <= (yBoxSubdomain - finClearence)]
     print(2)
     print(dfDrop1_reduced)
-    dfDrop2_reduced = dfDrop1[dfDrop2['ry'] >= (yBoxDrop-yBoxSubdomain+ vacuumslab)]
+    dfDrop2_reduced = dfDrop1[dfDrop2['ry'] >= (yBoxDrop-yBoxSubdomain+ finClearence)]
     print(3)
     print(dfDrop2_reduced)
     dfDrop2_reduced['ry'] = dfDrop2_reduced['ry'] + (yBoxSubdomain - (yBoxDrop-yBoxSubdomain))
@@ -219,19 +218,24 @@ def step3_prod():
     print(5)
     print(dfFull)
 
-
-    ## for testing: plot once: 
-
-
-
+    # refresh index and particle ids 
     num_new = len(dfFull)
+    idArr = np.array(range(len(dfFull)))
+    pidArr = idArr +1
+    dfFull['pid'] = pidArr
+
     
-    # refresh particle ids
-    for pi in range(num_new):
-        dfFull['pid'][pi]=pi+1
+
+    ## TODO: for testing: plot once: 
+    import matplotlib.pyplot as plt
+    ax1 = dfFull.plot.scatter('rx', 'ry')
+    ax1.set_aspect('equal', 'box')
+    plt.savefig('fig1.png')
+
     print(6)
+    dfFull = dfFull.set_index(idArr)
+    # print(dfFull.to_string())
     print(dfFull)
-    print(dfFull.head())
 
     headerXML.find('headerinfo/length/x').text = str(xBoxDrop)
     headerXML.find('headerinfo/length/y').text = str(yBoxFull)
@@ -240,7 +244,7 @@ def step3_prod():
     headerXML.find('headerinfo/time').text = str(0.0)
     
     headerXMLTree.write(file_path_prod_start_header)
-    exp.exp_chp_bin_DF(file_path_prod_start, dfFull)  ##TODO: this produces error. check out why.
+    exp.exp_chp_bin_DF(file_path_prod_start, dfFull)
 
     
 
@@ -251,7 +255,7 @@ def step3_prod():
 
 
     # create conifg.xml
-    prodConfigText = template_prod(xBox, yBox, zBox, temperature)
+    prodConfigText = template_prod(xBoxDrop, yBoxFull, zBoxDrop, temperature)
     writeFile(prodConfigText, os.path.join(work_folder, configName_prod))
 
     # create bash (only stirling so far):
@@ -657,11 +661,11 @@ def template_equi(boxx, boxy, boxz, temperature):
 
 
 def template_prod(boxx, boxy, boxz, temperature):
-    simsteps = int(10e3)
+    simsteps = int(20e3)
     writefreq = int(5e3)
     mmpldFreq = int(500)
     rsfreq = int(mmpldFreq)
-    cylSamplingFreq = int(500)
+    cylSamplingFreq = int(5000)
     return f"""<?xml version='1.0' encoding='UTF-8'?>
 <mardyn version="20100525" >
 
@@ -825,7 +829,7 @@ def template_prod(boxx, boxy, boxz, temperature):
     </plugin>
 
     <plugin name="CylindricSampling">
-            <binwidth>2</binwidth>                  <!-- Width of sampling bins; default 1.0 -->
+            <binwidth>.5</binwidth>                  <!-- Width of sampling bins; default 1.0 -->
             <start>0</start>                          <!-- Simstep to start sampling; default 0 -->
             <writefrequency>{cylSamplingFreq}</writefrequency>        <!-- Simstep to write out result file; default 10000 -->
             <stop>1000000000000</stop>                            <!-- Simstep to stop sampling; default 1000000000 -->
@@ -836,8 +840,8 @@ def template_prod(boxx, boxy, boxz, temperature):
 	<plugin name="RegionSampling">
 		<region>
 			<coords>
-				<lcx>{domainX/2 - 1}</lcx> <lcy refcoordsID="0">0.0</lcy> <lcz>{domainZ/2 - 1}</lcz>
-				<ucx>{domainX/2 + 1}</ucx> <ucy refcoordsID="0">box</ucy> <ucz>{domainZ/2 + 1}</ucz>
+				<lcx>{domainX/2 - 1}</lcx> <lcy refcoordsID="0">0.0</lcy> <lcz>{domainX/2 - 1}</lcz>
+				<ucx>{domainX/2 + 1}</ucx> <ucy refcoordsID="0">box</ucy> <ucz>{domainX/2 + 1}</ucz>
 			</coords>
 			
 			<sampling type="profiles">   <!-- Sampling profiles of various scalar and vector quantities, e.g. temperature, density, force, hydrodynamic velocity -->	
@@ -887,8 +891,18 @@ if __name__ == '__main__':
             execStep = 'drop'
         elif arg in ['prod', 'coal']:
             execStep = 'prod'
-    #     elif arg == 'prod':
-    #         execStep = 'prod'
+        elif arg.startswith('T'):  
+            if len(arg) < 3 or type(eval(arg[1:])) == type(1) or type(eval(arg[1:]))== type(.7): arg+=',' 
+            temperature = list(eval(arg[1:]))[0]
+            print(f'argument {arg} interpreted as T = {temperature}')
+        elif arg.startswith('d'):
+            if len(arg) < 3 or type(eval(arg[1:])) == type(1) or type(eval(arg[1:]))== type(.7): arg+=',' 
+            d = list(eval(arg[1:]))[0]
+            print(f'argument {arg} interpreted as d = {d}')
+        elif arg.startswith('r'):
+            if len(arg) < 3 or type(eval(arg[1:])) == type(1) or type(eval(arg[1:]))== type(.7): arg+=',' 
+            r= list(eval(arg[1:]))[0]
+            print(f'argument {arg} interpreted as r = {r}')
     #     elif arg == 'test':
     #         work_folder = os.path.join(work_folder, f'test')  
     #     elif arg.startswith('m'):
@@ -898,14 +912,6 @@ if __name__ == '__main__':
     #         else:
     #             print(f'invalid machine argument [{machine}]. setting machine = 3')
     #             machine = 3
-        # elif arg.startswith('T'):  
-        #     if len(arg) < 3 or type(eval(arg[1:])) == type(1) or type(eval(arg[1:]))== type(.7): arg+=',' 
-        #     TList= list(eval(arg[1:]))
-        #     print(f'argument {arg} interpreted as TList = {TList}')
-    #     elif arg.startswith('r'):
-    #         if len(arg) < 3 or type(eval(arg[1:])) == type(1) or type(eval(arg[1:]))== type(.7): arg+=',' 
-    #         rList= list(eval(arg[1:]))
-    #         print(f'argument {arg} interpreted as rList = {rList}')
     #     else:
     #         print(f'arg {arg} not a valid argument')
     print(f'execstep: {execStep}')
