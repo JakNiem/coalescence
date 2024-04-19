@@ -33,20 +33,20 @@ runls1 = True
 
 ls1_exec = '/home/niemann/ls1-mardyn_cylindricSampling/build/src/MarDyn'
 work_folder = 'testFolder' #default, full name generated after arguments are parsed
-stepName_init = "init" #TODO: rename steps: bulk -- drop -- prod/coal
-stepName_equi = "equi"
+stepName_bulk = "bulk" #TODO: rename steps: bulk -- drop -- prod/coal
+stepName_drop = "drop"
 stepName_prod = "prod"
-configName_init = "config_init.xml"
-configName_equi = "config_equi.xml"
+configName_bulk = "config_bulk.xml"
+configName_drop = "config_drop.xml"
 configName_prod = "config_prod.xml"
 
 def main():
 
     if(execStep == 'bulk'):
-        step1_init()  ## bulk liquid initialization & equi
+        step1_bulk()  ## bulk liquid initialization & equi
         #TODO: bulk duplication for faster bulk equi
     elif execStep == 'drop':
-        step2_equi()  ## cutout & equi of single droplet
+        step2_drop()  ## cutout & equi of single droplet
     elif execStep == 'prod':
         step3_prod()  ## setup of coalescence and start production
     else:
@@ -55,7 +55,7 @@ def main():
 
 
 
-def step1_init():
+def step1_bulk():
     rhol,rhov = vle_kedia2006(temperature)
 
     # # make sure sphereparams.xml exists
@@ -69,12 +69,12 @@ def step1_init():
 
     bulkBox = domainX
     
-    bulkConfigText = template_init(bulkBox, bulkBox, bulkBox, temperature, rhol)
-    writeFile(bulkConfigText, os.path.join(work_folder, configName_init))
+    bulkConfigText = template_bulk(bulkBox, bulkBox, bulkBox, temperature, rhol)
+    writeFile(bulkConfigText, os.path.join(work_folder, configName_bulk))
 
     # create bash (only stirling so far)
     bashName_bulkInit = 'stirling_bulk.sh'
-    bashText = template_bash(ls1_exec, configName_init, stepName_init)
+    bashText = template_bash(ls1_exec, configName_bulk, stepName_bulk)
     writeFile(bashText, os.path.join(work_folder, bashName_bulkInit))
     os.system(f'chmod +x {os.path.join(work_folder, bashName_bulkInit)}')
 
@@ -84,17 +84,17 @@ def step1_init():
 
     return 0
 
-def step2_equi():
+def step2_drop():
 
     rhol,rhov = vle_kedia2006(temperature)
     
     in_file_path = os.path.join(work_folder, 'cp_binary_bulk-2.restart.dat')
-    file_path_equi_start = os.path.join(work_folder, 'cp_binary_equi.start.dat')
+    file_path_drop_start = os.path.join(work_folder, 'cp_binary_drop.start.dat')
 
 
     ############# adjust local densities
     in_file_path_header = in_file_path[:-4]+'.header.xml'
-    file_path_equi_start_header = file_path_equi_start[:-4]+'.header.xml'
+    file_path_drop_start_header = file_path_drop_start[:-4]+'.header.xml'
     
     # Read in checkpoint header
     headerXMLTree = et.parse(in_file_path_header)
@@ -142,20 +142,20 @@ def step2_equi():
     headerXML.find('headerinfo/number').text = str(num_new)
     headerXML.find('headerinfo/time').text = str(0.0)
     
-    headerXMLTree.write(file_path_equi_start_header)
-    exp.exp_chp_bin_LD(file_path_equi_start, chpDroplet)
+    headerXMLTree.write(file_path_drop_start_header)
+    exp.exp_chp_bin_LD(file_path_drop_start, chpDroplet)
     
 
 
 
     ############# start sim:
     # create conifg.xml
-    equiConfigText = template_equi(xBox, yBox, zBox, temperature)
-    writeFile(equiConfigText, os.path.join(work_folder, configName_equi))
+    dropConfigText = template_drop(xBox, yBox, zBox, temperature)
+    writeFile(dropConfigText, os.path.join(work_folder, configName_drop))
 
     # create bash (only stirling so far):
     bashName_dropEqui = 'stirling_drop.sh'
-    bashText = template_bash(ls1_exec, configName_equi, stepName_equi)
+    bashText = template_bash(ls1_exec, configName_drop, stepName_drop)
 
     writeFile(bashText, os.path.join(work_folder, bashName_dropEqui))
     os.system(f'chmod +x {os.path.join(work_folder, bashName_dropEqui)}')
@@ -205,7 +205,7 @@ def step3_prod():
     #df Head:    pid  cid	rx	ry	rz	vx	vy	vz	q0	q1	q2	q3	Dx	Dy	Dz
     dfDrop1 = imp.imp_chp_bin_DF(in_file_path) 
     dfDrop2 = dfDrop1.copy(deep=True)
-    
+
     dfDrop1_reduced = dfDrop1[dfDrop1['ry'] <= (yBoxSubdomain - finClearence)]
     dfDrop2_reduced = dfDrop1[dfDrop2['ry'] >= (yBoxDrop-yBoxSubdomain+ finClearence)]
     dfDrop2_reduced['ry'] = dfDrop2_reduced['ry'] + (yBoxSubdomain - (yBoxDrop-yBoxSubdomain))
@@ -354,9 +354,9 @@ def template_bash(ls1Exec, configName, stepName, nodes = 1, nTasks = 1, ntasksPe
 	
 
 	
-def template_init(boxx, boxy, boxz, temperature, rhol):
+def template_bulk(boxx, boxy, boxz, temperature, rhol):
     """
-    returns the contents of the config.xml file for step1_init:
+    returns the contents of the config.xml file for step1_bulk:
     -- bulk liquid with densitiy rho = rhol*1.1
     -- 1000 steps for equilibriation
     """
@@ -505,7 +505,7 @@ def template_init(boxx, boxy, boxz, temperature, rhol):
 """
 
 
-def template_equi(boxx, boxy, boxz, temperature):
+def template_drop(boxx, boxy, boxz, temperature):
     simsteps = int(10e3)
     writefreq = int(5e3)
     # mmpldFreq = int(500)
@@ -560,8 +560,8 @@ def template_equi(boxx, boxy, boxz, temperature):
     
         <phasespacepoint>
 			<file type="binary">
-				<header>./cp_binary_equi.start.header.xml</header>
-				<data>./cp_binary_equi.start.dat</data>
+				<header>./cp_binary_drop.start.header.xml</header>
+				<data>./cp_binary_drop.start.dat</data>
 			</file>
 			<ignoreCheckpointTime>true</ignoreCheckpointTime>
         </phasespacepoint>
