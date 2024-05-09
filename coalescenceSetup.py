@@ -13,7 +13,7 @@ import pandas as pd
 #domain setup
 r1 = 6 #radius of droplet 1
 
-d = 2 #distance between droplet surfaces
+dList = 2 #distance between droplet surfaces
 surfToBoundary = 3*r1 #distance between surface and domain boundary
 domainX = 2*r1 + 2*surfToBoundary
 # domainZ = domainX
@@ -32,7 +32,6 @@ execStep = None
 runls1 = True 
 
 ls1_exec = '/home/niemann/ls1-mardyn_cylindricSampling/build/src/MarDyn'
-work_folder = 'testFolder' #default, full name generated after arguments are parsed
 stepName_bulk = "bulk" #TODO: rename steps: bulk -- drop -- prod/coal
 stepName_drop = "drop"
 stepName_prod = "prod"
@@ -42,20 +41,24 @@ configName_prod = "config_prod.xml"
 
 def main():
 
-    if(execStep == 'bulk'):
-        step1_bulk()  ## bulk liquid initialization & equi
-        #TODO: bulk duplication for faster bulk equi
-    elif execStep == 'drop':
-        step2_drop()  ## cutout & equi of single droplet
-    elif execStep == 'prod':
-        step3_prod()  ## setup of coalescence and start production
-    else:
-        print(f'execStep argument "{execStep}" invalid. please specify correctly.')
+    for d in dList:
+        work_dir = f"T{temperature}_r{r1}_d{d}" #_{str(datetime.now()).replace(' ', '')}
+        print(f'execstep: {execStep}. workFolder: {work_dir}')
+
+        if(execStep == 'bulk'):
+            step1_bulk(d, work_dir)  ## bulk liquid initialization & equi
+            #TODO: bulk duplication for faster bulk equi
+        elif execStep == 'drop':
+            step2_drop(d, work_dir)  ## cutout & equi of single droplet
+        elif execStep == 'prod':
+            step3_prod(d, work_dir)  ## setup of coalescence and start production
+        else:
+            print(f'execStep argument "{execStep}" invalid. please specify correctly.')
 
 
 
 
-def step1_bulk():
+def step1_bulk(d, work_dir = 'testDir'):
     rhol,rhov = vle_kedia2006(temperature)
 
     # # make sure sphereparams.xml exists
@@ -63,33 +66,33 @@ def step1_bulk():
     #     writeFile(template_sphereparams(), os.path.normpath("./sphereparams.xml"))    
 
     # create work_folder
-    if not os.path.exists(work_folder):
-        os.mkdir(work_folder)
+    if not os.path.exists(work_dir):
+        os.mkdir(work_dir)
     # create conifg.xml
 
     bulkBox = domainX
     
     bulkConfigText = template_bulk(bulkBox, bulkBox, bulkBox, temperature, rhol)
-    writeFile(bulkConfigText, os.path.join(work_folder, configName_bulk))
+    writeFile(bulkConfigText, os.path.join(work_dir, configName_bulk))
 
     # create bash (only stirling so far)
     bashName_bulkInit = 'stirling_bulk.sh'
-    bashText = template_bash(ls1_exec, configName_bulk, stepName_bulk)
-    writeFile(bashText, os.path.join(work_folder, bashName_bulkInit))
-    os.system(f'chmod +x {os.path.join(work_folder, bashName_bulkInit)}')
+    bashText = template_bash(ls1_exec, configName_bulk, stepName_bulk, d, temperature)
+    writeFile(bashText, os.path.join(work_dir, bashName_bulkInit))
+    os.system(f'chmod +x {os.path.join(work_dir, bashName_bulkInit)}')
 
 
-    if runls1: os.system(f'cd {work_folder}; sbatch {bashName_bulkInit}')
+    if runls1: os.system(f'cd {work_dir}; sbatch {bashName_bulkInit}')
     os.system('cd ..')
 
     return 0
 
-def step2_drop():
+def step2_drop(d, work_dir = 'testDir'):
 
     rhol,rhov = vle_kedia2006(temperature)
     
-    in_file_path = os.path.join(work_folder, 'cp_binary_bulk-2.restart.dat')
-    file_path_drop_start = os.path.join(work_folder, 'cp_binary_drop.start.dat')
+    in_file_path = os.path.join(work_dir, 'cp_binary_bulk-2.restart.dat')
+    file_path_drop_start = os.path.join(work_dir, 'cp_binary_drop.start.dat')
 
 
     ############# adjust local densities
@@ -151,27 +154,28 @@ def step2_drop():
     ############# start sim:
     # create conifg.xml
     dropConfigText = template_drop(xBox, yBox, zBox, temperature)
-    writeFile(dropConfigText, os.path.join(work_folder, configName_drop))
+    writeFile(dropConfigText, os.path.join(work_dir, configName_drop))
 
     # create bash (only stirling so far):
     bashName_dropEqui = 'stirling_drop.sh'
-    bashText = template_bash(ls1_exec, configName_drop, stepName_drop)
 
-    writeFile(bashText, os.path.join(work_folder, bashName_dropEqui))
-    os.system(f'chmod +x {os.path.join(work_folder, bashName_dropEqui)}')
+    bashText = template_bash(ls1_exec, configName_drop, stepName_drop, d, temperature)
+
+    writeFile(bashText, os.path.join(work_dir, bashName_dropEqui))
+    os.system(f'chmod +x {os.path.join(work_dir, bashName_dropEqui)}')
     
     #run:
-    if runls1: os.system(f'cd {work_folder}; sbatch {bashName_dropEqui}')
+    if runls1: os.system(f'cd {work_dir}; sbatch {bashName_dropEqui}')
 
 
 
 
 
-def step3_prod():
+def step3_prod(d, work_dir = 'testDir'):
 
 
-    in_file_path = os.path.join(work_folder, 'cp_binary_drop-2.restart.dat')
-    file_path_prod_start = os.path.join(work_folder, 'cp_binary_prod.start.dat')
+    in_file_path = os.path.join(work_dir, 'cp_binary_drop-2.restart.dat')
+    file_path_prod_start = os.path.join(work_dir, 'cp_binary_prod.start.dat')
 
 
     ############# adjust local densities
@@ -246,17 +250,17 @@ def step3_prod():
 
     # create conifg.xml
     prodConfigText = template_prod(xBoxDrop, yBoxFull, zBoxDrop, temperature)
-    writeFile(prodConfigText, os.path.join(work_folder, configName_prod))
+    writeFile(prodConfigText, os.path.join(work_dir, configName_prod))
 
     # create bash (only stirling so far):
     bashName_prod = 'stirling_prod.sh'
-    bashText = template_bash(ls1_exec, configName_prod, stepName_prod)
+    bashText = template_bash(ls1_exec, configName_prod, stepName_prod, d, temperature)
 
-    writeFile(bashText, os.path.join(work_folder, bashName_prod))
-    os.system(f'chmod +x {os.path.join(work_folder, bashName_prod)}')
+    writeFile(bashText, os.path.join(work_dir, bashName_prod))
+    os.system(f'chmod +x {os.path.join(work_dir, bashName_prod)}')
 
     #run:
-    if runls1: os.system(f'cd {work_folder}; sbatch {bashName_prod}')
+    if runls1: os.system(f'cd {work_dir}; sbatch {bashName_prod}')
 
 
 
@@ -310,7 +314,7 @@ def writeFile(content, outfilepath):
 
 
 #################### TEMPLATES ####################
-def template_bash(ls1Exec, configName, stepName, nodes = 1, nTasks = 1, ntasksPerNode = 1, cpusPerTask = 1):
+def template_bash(ls1Exec, configName, stepName, d, temperature, nodes = 1, nTasks = 1, ntasksPerNode = 1, cpusPerTask = 1):
     return f"""#!/bin/sh
 
 #SBATCH -J coa_d{d}_T{temperature}
@@ -866,8 +870,8 @@ if __name__ == '__main__':
             print(f'argument {arg} interpreted as T = {temperature}')
         elif arg.startswith('d'):
             if len(arg) < 3 or type(eval(arg[1:])) == type(1) or type(eval(arg[1:]))== type(.7): arg+=',' 
-            d = list(eval(arg[1:]))[0]
-            print(f'argument {arg} interpreted as d = {d}')
+            dList = list(eval(arg[1:]))
+            print(f'argument {arg} interpreted as d = {dList}')
         elif arg.startswith('r'):
             if len(arg) < 3 or type(eval(arg[1:])) == type(1) or type(eval(arg[1:]))== type(.7): arg+=',' 
             r1 = list(eval(arg[1:]))[0]
@@ -883,8 +887,5 @@ if __name__ == '__main__':
     #             machine = 3
     #     else:
     #         print(f'arg {arg} not a valid argument')
-
-    work_folder = f"T{temperature}_r{r1}_d{d}" #_{str(datetime.now()).replace(' ', '')}
-    print(f'execstep: {execStep}. workFolder: {work_folder}')
 
     main()
