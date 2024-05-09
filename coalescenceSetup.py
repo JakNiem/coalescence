@@ -211,7 +211,7 @@ def step3_prod():
     dfDrop2_reduced['ry'] = dfDrop2_reduced['ry'] + (yBoxSubdomain - (yBoxDrop-yBoxSubdomain))
     
     dfFull = pd.concat([dfDrop1_reduced, dfDrop2_reduced])
-    print(5)
+    # print(5)
     # print(dfFull)
 
     # refresh index and particle ids 
@@ -228,10 +228,8 @@ def step3_prod():
     # ax1.set_aspect('equal', 'box')
     # plt.savefig('fig1.png')
 
-    print(6)
     dfFull = dfFull.set_index(idArr)
     # print(dfFull.to_string())
-    print(dfFull)
 
     headerXML.find('headerinfo/length/x').text = str(xBoxDrop)
     headerXML.find('headerinfo/length/y').text = str(yBoxFull)
