@@ -198,8 +198,8 @@ def step3_prod(d, work_dir = 'testDir'):
 
     finClearence = .5 # minimum distance of particles from stiching-plane 
     if finClearence>=d/2:
-        print(f"ERROR! vacuumslab>=d. exiting.")
-        exit()
+        print(f"WARNING! reducing finClearence to d/2 =  {d/2} to adapt to small droplet distance of d = {d}.")
+        finClearence = d/2
     
     centerDomainDrop = xBoxDrop/2
     yBoxSubdomain = centerDomainDrop+r1+d/2
@@ -317,7 +317,7 @@ def writeFile(content, outfilepath):
 def template_bash(ls1Exec, configName, stepName, d, temperature, nodes = 1, nTasks = 1, ntasksPerNode = 1, cpusPerTask = 1):
     return f"""#!/bin/sh
 
-#SBATCH -J coa_d{d}_T{temperature}
+#SBATCH -J coa_d{d}_T{temperature*10}
 #SBATCH --nodes={nodes}
 
 ### 1*8 MPI ranks
