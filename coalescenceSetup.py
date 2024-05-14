@@ -16,6 +16,8 @@ r1 = 6 #radius of droplet 1
 dList = 2 #distance between droplet surfaces
 surfToBoundary = 3*r1 #distance between surface and domain boundary
 domainX = 2*r1 + 2*surfToBoundary
+
+rerunNumber = 0
 # domainZ = domainX
 # domainY = (2*r1 + surfToBoundary)*2 + d
 # #derived positional values:
@@ -42,7 +44,11 @@ configName_prod = "config_prod.xml"
 def main():
 
     for d in dList:
-        work_dir = f"T{temperature}_r{r1}_d{d}" #_{str(datetime.now()).replace(' ', '')}
+        if(rerunNumber == 0):
+            work_dir = f"T{temperature}_r{r1}_d{d}" #legacy compatability
+        else:
+            work_dir = f"T{temperature}_r{r1}_d{d}_i{rerunNumber}"
+
         print(f'execstep: {execStep}. workFolder: {work_dir}')
 
         if(execStep == 'bulk'):
@@ -479,7 +485,15 @@ def template_bulk(boxx, boxy, boxz, temperature, rhol):
             <outputprefix>cp_binary_bulk</outputprefix>
         </outputplugin>
     </output>
-    
+
+    <plugin name="COMaligner">
+		<x>true</x>
+		<y>true</y>
+		<z>true</z>
+		<interval>10</interval>
+		<correctionFactor>1.0</correctionFactor>
+	</plugin>
+
     <plugin name="DriftCtrl">
         <control>
             <start>0</start>
@@ -626,6 +640,14 @@ def template_drop(boxx, boxy, boxz, temperature):
             <outputprefix>cp_binary_drop</outputprefix>
         </outputplugin>
     </output>
+
+    <plugin name="COMaligner">
+		<x>true</x>
+		<y>true</y>
+		<z>true</z>
+		<interval>10</interval>
+		<correctionFactor>1.0</correctionFactor>
+	</plugin>
     
     <plugin name="DriftCtrl">
         <control>
@@ -659,7 +681,7 @@ def template_prod(boxx, boxy, boxz, temperature):
     writefreq = int(5e3)
     mmpldFreq = int(500)
     rsfreq = int(mmpldFreq)
-    cylSamplingFreq = int(1000)
+    cylSamplingFreq = int(400)
     return f"""<?xml version='1.0' encoding='UTF-8'?>
 <mardyn version="20100525" >
 
@@ -800,6 +822,15 @@ def template_prod(boxx, boxy, boxz, temperature):
 		</outputplugin>
     </output>
     
+
+    <plugin name="COMaligner">
+		<x>true</x>
+		<y>true</y>
+		<z>true</z>
+		<interval>10</interval>
+		<correctionFactor>1.0</correctionFactor>
+	</plugin>
+    
     <plugin name="DriftCtrl">
         <control>
             <start>0</start>
@@ -876,6 +907,10 @@ if __name__ == '__main__':
             if len(arg) < 3 or type(eval(arg[1:])) == type(1) or type(eval(arg[1:]))== type(.7): arg+=',' 
             r1 = list(eval(arg[1:]))[0]
             print(f'argument {arg} interpreted as r1 = {r1}')
+        elif arg.startswith('i'):
+            if len(arg) < 3 or type(eval(arg[1:])) == type(1) or type(eval(arg[1:]))== type(.7): arg+=',' 
+            rerunNumber = list(eval(arg[1:]))[0]
+            print(f'argument {arg} interpreted as rerunNumber = {rerunNumber}')
     #     elif arg == 'test':
     #         work_folder = os.path.join(work_folder, f'test')  
     #     elif arg.startswith('m'):
