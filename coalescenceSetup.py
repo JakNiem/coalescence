@@ -920,7 +920,7 @@ if __name__ == '__main__':
     #         else:
     #             print(f'invalid machine argument [{machine}]. setting machine = 3')
     #             machine = 3
-    #     else:
-    #         print(f'arg {arg} not a valid argument')
+        else:
+            print(f'arg {arg} not a valid argument')
 
     main()

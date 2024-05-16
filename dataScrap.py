@@ -87,7 +87,7 @@ for simdir in sims:
                 touch = True
                 firstTouch = True
 
-            sampleDict = {'T':T, 'r':r,'d_init':d_initial, 't':timeStep, 'd': d, 'firstTouch': firstTouch}
+            sampleDict = {'dir': simdir, 'T':T, 'r':r,'d_init':d_initial, 't':timeStep, 'd': d, 'firstTouch': firstTouch}
 
             print(f'data for sample {sample}: {sampleDict}')
             postprocList.append(sampleDict)
@@ -96,6 +96,35 @@ for simdir in sims:
 postprocDF = pd.DataFrame(postprocList)
 # print(postprocDF)
 postprocDF.to_csv("postprocessing_dataScrap.csv", sep = ',')
+
+print('postprocessing_dataScrap.csv done.')
+
+
+
+print('generating tContactDF ...')
+for dir in postprocDF['simdir'].unique():
+    print(f'dir: {dir}')
+    simDF = postprocDF[postprocDF['dir'] == dir]
+    print(simDF)
+
+    tContact = simDF[simDF['d']==0].t
+
+    print(f'tContact for {dir}: {tContact}')
+
+    # if sim['firstTouch'].values.sum() == 0:
+    #     tContact = 0
+    # else
+    #     tContact = 
+
+
+
+
+
+
+
+
+
 print('done.')
+print('all done.')
 
 
