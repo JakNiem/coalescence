@@ -3,6 +3,7 @@ import os
 from site import execsitecustomize
 import numpy as np
 import pandas as pd
+import matplotlib.pyplot as plt
 
 import math
 
@@ -16,7 +17,8 @@ sims = [f for f in folders if f.startswith('T')]
 # sims = ["T0.7_r6_d2", "T0.7_r6_d4"]
 
 
-
+nLayers = 3 # number of layers to average over 
+width = .5
 
             
 
@@ -27,6 +29,10 @@ for simdir in sims:
     T = integerList[0]
     r = integerList[1]
     d_initial = integerList[2]
+    if len(integerList) > 3: # legacy compatability
+        n = integerList[3]
+    else: 
+        n = 0
 
     print(f'directory: {simdir}, T={T}, r={r}, d={d_initial}')
 
@@ -54,27 +60,26 @@ for simdir in sims:
         # dataDict = {'T':[], 'r':[],'d_init':[], 't':[], 'd':  []}
         touch = False
         for sample in scalarSamples:
-            # print(f'extracting data from sample {sample}')
             timeStep = int(re.findall(r'\d+', sample)[0]) 
 
             samplePath = os.path.join(simdir, sample)
             sampledf = pd.read_csv(samplePath, delimiter='\s+')
-            #  height,  radius, numParts, rho, T,   ekin, p,  T_r,   T_y, T_t,   v_r,   v_y, v_t, p_r, p_y,     p_t, numSamples
 
             rhoDF = sampledf.pivot(index='radius', columns='height', values='rho')
-            rho = rhoDF.iloc[[0, 1, 2, 3, 4]].sum() #series of rho with index y
-            # rhoRollingNarrow = rho.rolling(window = 3, center = True).mean()
-            # rhoRollingWide = rho.rolling(window = 8, center = True).mean()
+            print('-----------------------------')
+            print(rhoDF)
+            
 
-            # print(f'rho: \n {rho}')
-            # print('------------')
-            # print(f'idmax: {rho.idxmax()}')
-            # print('------------')
+            ### averaging over several layers (r-direction):
+            numParticlesDF = rhoDF.mul(rhoDF.index*(2*math.pi*width), axis = 0)
+            VTotal = (nLayers*width)**2 * math.pi * width
+            rho = numParticlesDF.iloc[0:nLayers].sum()*VTotal
+            ### 
 
+
+            
             rightMaxId = rho[rho.index >= domainHeight/2].idxmax()
             leftMaxId = rho[rho.index < domainHeight/2].idxmax()
-            # # print(f'left: {leftMaxId}, right: {rightMaxId}')
-            # rhoCentral = rho[((rho.index >= leftMaxId)  & (rho.index <= rightMaxId))]
 
             gapY = rho[((rho.index >= leftMaxId)  & (rho < rhoGibbs) & (rho.index <= rightMaxId))].index
             gapLimitsY = [gapY.min(), gapY.max()]
@@ -87,14 +92,14 @@ for simdir in sims:
                 touch = True
                 firstTouch = True
 
-            sampleDict = {'dir': simdir, 'T':T, 'r':r,'d_init':d_initial, 't':timeStep, 'd': d, 'firstTouch': firstTouch}
+            sampleDict = {'dir': simdir, 'T':T, 'r':r,'d_init':d_initial, 'i': n,
+                          't':timeStep, 'd': d, 'firstTouch': firstTouch}
 
             print(f'data for sample {sample}: {sampleDict}')
             postprocList.append(sampleDict)
 
 
 postprocDF = pd.DataFrame(postprocList)
-# print(postprocDF)
 postprocDF.to_csv("postprocessing_dataScrap.csv", sep = ',')
 
 print('postprocessing_dataScrap.csv done.')
@@ -102,14 +107,36 @@ print('postprocessing_dataScrap.csv done.')
 
 
 print('generating tContactDF ...')
-for dir in postprocDF['simdir'].unique():
+contactList = []
+for dir in postprocDF['dir'].unique():
     print(f'dir: {dir}')
     simDF = postprocDF[postprocDF['dir'] == dir]
+    
+    T = simDF.iloc[0].T
+    r = simDF.iloc[0].r
+    d_init = simDF.iloc[0].d_init
+    n = simDF.iloc[0].i
+
     print(simDF)
+    d0 = simDF.iloc[0].d
 
     tContact = simDF[simDF['d']==0].t
 
-    print(f'tContact for {dir}: {tContact}')
+    print(f'tContact for {dir}: \n {tContact}')
+
+    if tContact.size == 0:
+        tFirstContact = float('nan')
+    else:
+        tFirstContact = tContact.iloc[0]
+    print(f'tFirstContact for {dir}: \n {tFirstContact}')
+
+    contactList.append({'dir': simdir, 'T':T, 'r':r, 'd_init': d_init, 'i': n, 'd0':d0, 'tTouch':tFirstContact})
+
+contactDF = pd.DataFrame(contactList)
+print('contactDF:')
+print(contactDF)
+contactDF.to_csv("postprocessing_contactDF.csv", sep = ',')
+
 
     # if sim['firstTouch'].values.sum() == 0:
     #     tContact = 0
@@ -120,11 +147,7 @@ for dir in postprocDF['simdir'].unique():
 
 
 
-
-
-
-
-print('done.')
+print('contactDF done.')
 print('all done.')
 
 

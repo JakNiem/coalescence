@@ -44,10 +44,7 @@ configName_prod = "config_prod.xml"
 def main():
 
     for d in dList:
-        if(rerunNumber == 0):
-            work_dir = f"T{temperature}_r{r1}_d{d}" #legacy compatability
-        else:
-            work_dir = f"T{temperature}_r{r1}_d{d}_i{rerunNumber}"
+        work_dir = f"T{temperature}_r{r1}_d{d}_i{rerunNumber}"
 
         print(f'execstep: {execStep}. workFolder: {work_dir}')
 
@@ -907,7 +904,7 @@ if __name__ == '__main__':
             if len(arg) < 3 or type(eval(arg[1:])) == type(1) or type(eval(arg[1:]))== type(.7): arg+=',' 
             r1 = list(eval(arg[1:]))[0]
             print(f'argument {arg} interpreted as r1 = {r1}')
-        elif arg.startswith('i'):
+        elif arg.startswith('n'):
             if len(arg) < 3 or type(eval(arg[1:])) == type(1) or type(eval(arg[1:]))== type(.7): arg+=',' 
             rerunNumber = list(eval(arg[1:]))[0]
             print(f'argument {arg} interpreted as rerunNumber = {rerunNumber}')
