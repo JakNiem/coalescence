@@ -11,11 +11,11 @@ import pandas as pd
 
 
 #domain setup
-r1 = 6 #radius of droplet 1
+r1 = 20 #radius of droplet 1
 
 d = 2 #distance between droplet surfaces
-surfToBoundary = 3*r1 #distance between surface and domain boundary
-domainX = 2*r1 + 2*surfToBoundary
+surfToBoundary = 10 #distance between surface and domain boundary
+domainX = 2*r1 + d + 2*surfToBoundary
 # domainZ = domainX
 # domainY = (2*r1 + surfToBoundary)*2 + d
 # #derived positional values:
@@ -31,7 +31,9 @@ temperature = 0.7
 execStep = None
 runls1 = True 
 
-ls1_exec = '/home/niemann/ls1-mardyn_cylindricSampling/build/src/MarDyn'
+ls1_exec_relative = './ls1-mardyn-coalescenceSampling/build/src/MarDyn'
+ls1_exec = os.path.abspath(ls1_exec_relative)
+# ls1_exec = '/home/niemann/ls1-mardyn_cylindricSampling/build/src/MarDyn'
 work_folder = 'testFolder' #default, full name generated after arguments are parsed
 stepName_bulk = "bulk" #TODO: rename steps: bulk -- drop -- prod/coal
 stepName_drop = "drop"
@@ -735,32 +737,6 @@ def template_prod(boxx, boxy, boxz, temperature):
 
 
         <thermostats>
-            <thermostat type="TemperatureControl">
-                <control>
-                    <start>0</start>
-                    <frequency>1</frequency>
-                    <stop>1000000000</stop>
-                </control>
-                <regions>
-                    <region>
-                        <coords>
-                            <lcx>0.0</lcx> <lcy>0.0</lcy> <lcz>0.0</lcz>
-                            <ucx>box</ucx> <ucy>box</ucy> <ucz>box</ucz>
-                        </coords>
-                        <target>
-                            <temperature>{temperature}</temperature>
-                            <component>0</component>
-                        </target>
-                        <settings>
-                            <numslabs>1</numslabs>
-                            <exponent>0.4</exponent>
-                            <directions>xyz</directions>
-                        </settings>
-                        <writefreq>100</writefreq>
-                        <fileprefix>temp_log</fileprefix>
-                    </region>
-                </regions>
-            </thermostat>
         </thermostats> 
     </algorithm>
 
