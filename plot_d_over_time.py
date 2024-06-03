@@ -15,13 +15,9 @@ import matplotlib.pyplot as plt
 import csv
 import re
 
-import seaborn as sns
-
-
-
-import imageio
-import matplotlib.cm as cm
-import matplotlib.animation as animation
+# import imageio
+# import matplotlib.cm as cm
+# import matplotlib.animation as animation
 
 
 def approxIndexRow(df, approxIndex):
@@ -45,7 +41,8 @@ print(sims)
 
 
 ## CENTRAL LINE VISUALIZATION:
-
+plt.figure(figsize = (18.5, 10.5))
+plt.grid()
 
 for simdir in sims:
     [T, r, dInital, v1v2] =  re.findall(r"[-+]?(?:\d*\.*\d+)", simdir)
@@ -146,7 +143,8 @@ for simdir in sims:
             plt.axhline(y=(rhoLiq+rhoVap)/2, color = 'k', linestyle='--')
             plt.plot(rhoDF_rolling.iloc[idSymPlane], label = simdir)
             plt.grid()
-            plt.legend(loc = 'lower right')
+            # plt.legend(loc = 'lower right')
+            plt.legend()
             plt.title('rho at contact point over time (simstep)')
             plt.savefig('rhoContact_over_time')
 

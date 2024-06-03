@@ -15,13 +15,10 @@ import matplotlib.pyplot as plt
 import csv
 import re
 
-import seaborn as sns
 
-
-
-import imageio
-import matplotlib.cm as cm
-import matplotlib.animation as animation
+# import imageio
+# import matplotlib.cm as cm
+# import matplotlib.animation as animation
 
 
 def approxIndexRow(df, approxIndex):
@@ -45,7 +42,8 @@ print(sims)
 
 
 ## CENTRAL LINE VISUALIZATION:
-
+plt.figure(figsize = (18.5, 10.5))
+plt.grid()
 
 for simdir in sims:
     [T, r, dInital, v1v2] =  re.findall(r"[-+]?(?:\d*\.*\d+)", simdir)
@@ -134,7 +132,7 @@ for simdir in sims:
             print(rhoDF.index[-1])
             plt.axvline(x= rhoDF.columns[-1], color = 'k')
             plt.grid()
-            plt.legend()
+            plt.legend(loc='upper right')
             plt.title('d_inital over simstep of first touch')
             plt.savefig('d_inital_over_simstepOfTouch')
 
