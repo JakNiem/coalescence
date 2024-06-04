@@ -32,6 +32,13 @@ def approxIndexRow(df, approxIndex):
 dirList = os.listdir('.')
 folders = [f for f in dirList if os.path.isdir(f)]
 sims = [f for f in folders if f.startswith('T')]
+
+
+# sims = [f for f in folders if f.startswith('T0.7_r40')]
+# postfix = '_r40'
+# sims = [f for f in folders if f.startswith('T0.7_r20')]
+# postfix = '_r20'
+
 sims.sort()
 print(sims)
 
@@ -134,7 +141,7 @@ for simdir in sims:
             plt.grid()
             plt.legend(loc='upper right')
             plt.title('d_inital over simstep of first touch')
-            plt.savefig('d_inital_over_simstepOfTouch')
+            plt.savefig(f'd_inital_over_simstepOfTouch{postfix}')
 
 
 

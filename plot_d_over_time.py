@@ -31,6 +31,13 @@ def approxIndexRow(df, approxIndex):
 dirList = os.listdir('.')
 folders = [f for f in dirList if os.path.isdir(f)]
 sims = [f for f in folders if f.startswith('T')]
+
+# sims = [f for f in folders if f.startswith('T0.7_r40')]
+# postfix = '_r40'
+sims = [f for f in folders if f.startswith('T0.7_r20')]
+postfix2 = '_r20'
+
+
 sims.sort()
 print(sims)
 
@@ -143,10 +150,10 @@ for simdir in sims:
             plt.axhline(y=(rhoLiq+rhoVap)/2, color = 'k', linestyle='--')
             plt.plot(rhoDF_rolling.iloc[idSymPlane], label = simdir)
             plt.grid()
-            # plt.legend(loc = 'lower right')
-            plt.legend()
+            plt.legend(loc = 'lower right')
+            # plt.legend()
             plt.title('rho at contact point over time (simstep)')
-            plt.savefig('rhoContact_over_time')
+            plt.savefig(f'rhoContact_over_time{postfix2}')
 
 
 
