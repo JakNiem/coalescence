@@ -26,7 +26,7 @@ vSelected = [1,1] # for production, these are the two selected droplets. if long
 execStep = None
 runls1 = True 
 
-ls1_exec_relative = './ls1-mardyn/build/src/MarDyn'
+ls1_exec_relative = '../ls1-mardyn/build/src/MarDyn'
 ls1_exec = os.path.abspath(ls1_exec_relative)
 # ls1_exec = '/home/niemann/ls1-mardyn_cylindricSampling/build/src/MarDyn'
 stepName_bulk = "bulk" 
@@ -800,6 +800,43 @@ def template_prod(boxx, boxy, boxz, temperature):
 
 
         <thermostats>
+            <thermostat type="TemperatureControl">
+				<control>
+					<start>100000000</start>           <!-- Timestep turning thermostat ON -->
+					<frequency>10000000</frequency>   <!-- Thermosatt is active every <frequency>-th time step -->
+					<stop>10000000000</stop>             <!-- Timestep turning thermostat OFF -->
+				</control>
+				<regions>
+					<region>
+						<coords>
+							<lcx>0.</lcx> <lcy>0.</lcy> <lcz>0.</lcz>
+							<ucx>10.</ucx> <ucy>10.</ucy> <ucz>10.</ucz>
+						</coords>
+						<target>
+							<temperature>{temperature}</temperature>   <!-- target temperature -->
+							<ramp>                    <!-- ramp temperature from <start> to <end> value -->
+								<start>0.70</start>   <!-- start temperature -->
+								<end>0.80</end>       <!-- end temperature -->
+								<update>
+									<start>100000000</start>   <!-- Timestep of ramping start -->
+									<stop>10000000000</stop>     <!-- Timestep of ramping stop -->
+									<freq>100000000</freq>     <!-- adjust target temperature every <freq>-th time
+	 step -->
+								</update>
+							</ramp>
+							<component>1</component>   <!-- target component -->
+						</target>
+						<settings>
+							<numslabs>1</numslabs>   <!-- Divide region into <numslabs> slabs -->
+							<exponent>.5</exponent>          <!-- Damping exponent of thermostat -->
+							<directions>xyz</directions>         <!-- Translational degrees of freedom to be considered
+	 for thermostating: x|y|z|xy|xz|yz|xyz -->
+						</settings>
+						<writefreq>100000000</writefreq>         <!-- Log thermostat scaling factors betaTrans and betaRot
+	 --> <fileprefix>betalog</fileprefix>    <!-- Prefix of log file -->
+					</region>
+				</regions>
+			</thermostat>
         </thermostats> 
     </algorithm>
 
